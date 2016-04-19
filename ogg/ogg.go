@@ -7,18 +7,18 @@ import (
 	"io"
 )
 
-var PageHeaderPattern = [4]byte{'O', 'g', 'g', 'S'}
+var pageHeaderPattern = [4]byte{'O', 'g', 'g', 'S'}
 
 var ErrCorruptStream = errors.New("ogg: corrupt stream")
 var ErrChecksum = errors.New("ogg: wrong checksum")
 
 const (
-	HeaderFlagContinuedPacket   = 1
-	HeaderFlagBeginningOfStream = 2
-	HeaderFlagEndOfStream       = 4
+	headerFlagContinuedPacket   = 1
+	headerFlagBeginningOfStream = 2
+	headerFlagEndOfStream       = 4
 )
 
-type pageHeader struct {
+type pageHeaderStart struct {
 	CapturePattern          [4]byte
 	StreamStructureVersion  uint8
 	HeaderTypeFlag          byte
@@ -29,25 +29,20 @@ type pageHeader struct {
 	PageSegments            uint8
 }
 
-type PageHeader struct {
-	pageHeader
+type pageHeader struct {
+	pageHeaderStart
 	SegmentTable   []uint8
 	headerChecksum uint32
 }
 
-type Packet struct {
-	StreamSerialNumber uint32
-	Content            []byte
-}
-
-func (h *PageHeader) ReadFrom(r io.Reader) error {
+func (h *pageHeader) ReadFrom(r io.Reader) error {
 	data := make([]byte, 27)
 	_, err := io.ReadFull(r, data)
 	if err != nil {
 		return err
 	}
-	binary.Read(bytes.NewReader(data), binary.LittleEndian, &h.pageHeader)
-	if h.CapturePattern != PageHeaderPattern {
+	binary.Read(bytes.NewReader(data), binary.LittleEndian, &h.pageHeaderStart)
+	if h.CapturePattern != pageHeaderPattern {
 		return ErrCorruptStream
 	}
 	h.SegmentTable = make([]byte, h.PageSegments)
@@ -61,6 +56,6 @@ func (h *PageHeader) ReadFrom(r io.Reader) error {
 	return nil
 }
 
-func (h *PageHeader) IsFirstPage() bool { return h.HeaderTypeFlag&HeaderFlagBeginningOfStream != 0 }
-func (h *PageHeader) IsLastPage() bool  { return h.HeaderTypeFlag&HeaderFlagEndOfStream != 0 }
-func (h *PageHeader) IsContinue() bool  { return h.HeaderTypeFlag&HeaderFlagContinuedPacket != 0 }
+func (h *pageHeader) IsFirstPage() bool { return h.HeaderTypeFlag&headerFlagBeginningOfStream != 0 }
+func (h *pageHeader) IsLastPage() bool  { return h.HeaderTypeFlag&headerFlagEndOfStream != 0 }
+func (h *pageHeader) IsContinue() bool  { return h.HeaderTypeFlag&headerFlagContinuedPacket != 0 }

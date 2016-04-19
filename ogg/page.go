@@ -5,7 +5,7 @@ import (
 )
 
 type page struct {
-	header        PageHeader
+	header        pageHeader
 	needsContinue bool
 	packetCount   int
 	packets       []packetInfo

@@ -8,19 +8,6 @@ var (
 	SkipCRC Option = func(r *Reader) { r.doCRC = false }
 )
 
-type Reader_ struct {
-	source             io.Reader
-	pageHeader         PageHeader
-	packetSizes        [256]int
-	packetCount        int
-	lastPacketFinished bool
-	currentPage        []byte
-	currentPacket      []byte
-	index              int
-	offset             int
-	doCRC              bool
-}
-
 type Reader struct {
 	source         io.Reader
 	currentPage    page

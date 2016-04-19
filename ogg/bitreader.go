@@ -140,20 +140,3 @@ func (r *BitReader) Read64(n uint) uint64 {
 func (r *BitReader) ReadBool() bool {
 	return r.Read8(1) == 1
 }
-
-/*
-func (r *BitReader) ReadBits(n int) uint32 {
-	remaining := (len(r.data)-r.position)*8 - r.bitOffset
-	if remaining < n {
-		return 0
-	}
-	i := binary.LittleEndian.Uint64(r.data[r.position:])
-	i >>= uint(r.bitOffset)
-	i &^= (uint64(0xFFFFFFFFFFFFFFFF) << uint(n))
-	r.bitOffset += n
-	bytes := r.bitOffset / 8
-	r.bitOffset -= bytes * 8
-	r.position += bytes
-	return uint32(i)
-}
-*/
