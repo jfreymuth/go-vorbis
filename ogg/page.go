@@ -76,7 +76,7 @@ func (p *page) Packet(i int) []byte {
 }
 
 // Rest returns the last packet on the page if it is unfinished, or an empty slice.
-// Intended to be used as the argument to the next pages Prepend method.
+// Intended to be used as the argument to the next page's Prepend method.
 func (p *page) Rest() []byte {
 	if p.packetCount == 0 {
 		// a packet spans multiple pages
