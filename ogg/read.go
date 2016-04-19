@@ -27,9 +27,6 @@ func NewReader(in io.Reader, options ...Option) *Reader {
 	for _, option := range options {
 		option(r)
 	}
-	if r.doCRC {
-		crcInit()
-	}
 	return r
 }
 
