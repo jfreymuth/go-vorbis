@@ -6,6 +6,12 @@ import (
 	"github.com/jfreymuth/go-vorbis/ogg"
 )
 
+type floorData struct {
+	floor     floor
+	data      []uint32
+	noResidue bool
+}
+
 func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [][]float32, error) {
 	if r.ReadBool() {
 		return nil, nil, ogg.ErrCorruptStream
@@ -16,84 +22,32 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 	blocktype := mode.blockflag
 	longWindow := mode.blockflag == 1
 	blocksize := s.blocksize[blocktype]
+	spectrumSize := uint32(blocksize / 2)
 	windowPrev, windowNext := false, false
 	if longWindow {
 		windowPrev = r.ReadBool()
 		windowNext = r.ReadBool()
 	}
 
-	// decode floor data
-	mapping := s.mappings[mode.mapping]
-	floors := make([]floor, s.channels)
-	floorData := make([][]uint32, s.channels)
-	noResidue := make([]bool, s.channels)
-	for ch := 0; ch < s.channels; ch++ {
-		floors[ch] = s.floors[mapping.submaps[mapping.mux[ch]].floor]
-		floorData[ch] = floors[ch].Decode(r, s.codebooks, uint32(blocksize/2))
-		noResidue[ch] = floorData[ch] == nil
-	}
-
-	for i := 0; i < int(mapping.couplingSteps); i++ {
-		if !noResidue[mapping.magnitude[i]] || !noResidue[mapping.angle[i]] {
-			noResidue[mapping.magnitude[i]] = false
-			noResidue[mapping.angle[i]] = false
-		}
-	}
-
-	// decode residue
-	var doNotDecode []bool
+	mapping := &s.mappings[mode.mapping]
+	floors := make([]floorData, s.channels)
 	residueVectors := make([][]float32, s.channels)
-	for i := range mapping.submaps {
-		for j := 0; j < s.channels; j++ {
-			if mapping.mux[j] == uint8(i) {
-				doNotDecode = append(doNotDecode, noResidue[j])
-			}
-		}
-		residue := s.residues[mapping.submaps[i].residue]
-		decodedResidue := residue.Decode(r, doNotDecode, blocksize/2, s.codebooks)
-		for j := 0; j < s.channels; j++ {
-			if mapping.mux[j] == uint8(i) {
-				residueVectors[j] = decodedResidue[0]
-				decodedResidue = decodedResidue[1:]
-			}
-		}
-	}
-
-	// inverse coupling
-	for i := mapping.couplingSteps; i > 0; i-- {
-		magnitudeVector := residueVectors[mapping.magnitude[i-1]]
-		angleVector := residueVectors[mapping.angle[i-1]]
-		for j := range magnitudeVector {
-			m := magnitudeVector[j]
-			a := angleVector[j]
-			if m > 0 {
-				if a > 0 {
-					m, a = m, m-a
-				} else {
-					a, m = m, m+a
-				}
-			} else {
-				if a > 0 {
-					m, a = m, m+a
-				} else {
-					a, m = m, m-a
-				}
-			}
-			magnitudeVector[j] = m
-			angleVector[j] = a
-		}
-	}
-
-	// apply floor data
 	for ch := range residueVectors {
-		if floorData[ch] != nil {
-			floors[ch].Apply(residueVectors[ch], floorData[ch])
+		residueVectors[ch] = s.residueBuffer[ch][:spectrumSize]
+		for i := range residueVectors[ch] {
+			residueVectors[ch][i] = 0
 		}
 	}
+
+	s.decodeFloors(r, floors, mapping, spectrumSize)
+	s.decodeResidue(r, residueVectors, mapping, floors, spectrumSize)
+	s.inverseCoupling(mapping, residueVectors)
+	s.applyFloor(floors, residueVectors)
 
 	// inverse MDCT
 	out := make([][]float32, s.channels)
 	for ch := range out {
+		//out[ch] = s.outputBuffer[ch][:blocksize]
 		out[ch] = make([]float32, blocksize)
 		imdct(s.lookup[blocktype], residueVectors[ch], out[ch])
 	}
@@ -166,6 +120,70 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 		}
 	}
 	return final, next, nil
+}
+
+func (s *setup) decodeFloors(r *ogg.BitReader, floors []floorData, mapping *mapping, n uint32) {
+	for ch := range floors {
+		floor := s.floors[mapping.submaps[mapping.mux[ch]].floor]
+		data := floor.Decode(r, s.codebooks, n)
+		floors[ch] = floorData{floor, data, data == nil}
+	}
+
+	for i := 0; i < int(mapping.couplingSteps); i++ {
+		if !floors[mapping.magnitude[i]].noResidue || !floors[mapping.angle[i]].noResidue {
+			floors[mapping.magnitude[i]].noResidue = false
+			floors[mapping.angle[i]].noResidue = false
+		}
+	}
+
+}
+
+func (s *setup) decodeResidue(r *ogg.BitReader, out [][]float32, mapping *mapping, floors []floorData, n uint32) {
+	for i := range mapping.submaps {
+		doNotDecode := make([]bool, 0, len(out))
+		tmp := make([][]float32, 0, len(out))
+		for j := 0; j < s.channels; j++ {
+			if mapping.mux[j] == uint8(i) {
+				doNotDecode = append(doNotDecode, floors[j].noResidue)
+				tmp = append(tmp, out[j])
+			}
+		}
+		s.residues[mapping.submaps[i].residue].Decode(r, doNotDecode, n, s.codebooks, tmp)
+	}
+}
+
+func (s *setup) inverseCoupling(mapping *mapping, residueVectors [][]float32) {
+	for i := mapping.couplingSteps; i > 0; i-- {
+		magnitudeVector := residueVectors[mapping.magnitude[i-1]]
+		angleVector := residueVectors[mapping.angle[i-1]]
+		for j := range magnitudeVector {
+			m := magnitudeVector[j]
+			a := angleVector[j]
+			if m > 0 {
+				if a > 0 {
+					m, a = m, m-a
+				} else {
+					a, m = m, m+a
+				}
+			} else {
+				if a > 0 {
+					m, a = m, m+a
+				} else {
+					a, m = m, m-a
+				}
+			}
+			magnitudeVector[j] = m
+			angleVector[j] = a
+		}
+	}
+}
+
+func (s *setup) applyFloor(floors []floorData, residueVectors [][]float32) {
+	for ch := range residueVectors {
+		if floors[ch].data != nil {
+			floors[ch].floor.Apply(residueVectors[ch], floors[ch].data)
+		}
+	}
 }
 
 func makeWindow(size uint) []float32 {

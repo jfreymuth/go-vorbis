@@ -1,8 +1,6 @@
 package vorbis
 
-import (
-	"github.com/jfreymuth/go-vorbis/ogg"
-)
+import "github.com/jfreymuth/go-vorbis/ogg"
 
 type residue struct {
 	residueType     uint16
@@ -48,11 +46,12 @@ func (x *residue) ReadFrom(r *ogg.BitReader) error {
 	return nil
 }
 
-func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []codebook) [][]float32 {
-	if x.residueType < 2 {
-		return x.decode(r, doNotDecode, n, books)
+/*
+func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint32, books []codebook, out [][]float32) {
+	if x.residueType < 3 {
+		x.decode(r, doNotDecode, n, books, out)
 	} else {
-		ch := uint(len(doNotDecode))
+		ch := uint32(len(doNotDecode))
 		decode := false
 		for _, not := range doNotDecode {
 			if !not {
@@ -61,50 +60,48 @@ func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []c
 			}
 		}
 		if !decode {
-			result := make([][]float32, ch)
-			for j := range result {
-				result[j] = make([]float32, n)
-			}
-			return result
+			return
 		}
-		dec := x.decode(r, []bool{false}, n*ch, books)
-		result := make([][]float32, ch)
-		for i := range result {
-			result[i] = make([]float32, n)
-		}
-		for i := uint(0); i < n; i++ {
-			for j := uint(0); j < ch; j++ {
-				result[j][i] = dec[0][j+i*ch]
+		tmp := [][]float32{make([]float32, n*ch)}
+		x.decode(r, []bool{false}, n*ch, books, tmp)
+		for i := uint32(0); i < n; i++ {
+			for j := uint32(0); j < ch; j++ {
+				out[j][i] = tmp[0][j+i*ch]
 			}
 		}
-		return result
 	}
 }
-
-func (x *residue) decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []codebook) [][]float32 {
+*/
+func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint32, books []codebook, out [][]float32) {
 	ch := uint32(len(doNotDecode))
-	actualSize := uint32(n)
 	if x.residueType == 2 {
-		actualSize *= ch
+		decode := false
+		for _, not := range doNotDecode {
+			if !not {
+				decode = true
+				break
+			}
+		}
+		if !decode {
+			return
+		}
+		n *= ch
+		ch = 1
 	}
 	begin, end := x.begin, x.end
-	if begin > actualSize {
-		begin = actualSize
+	if begin > n {
+		begin = n
 	}
-	if end > actualSize {
-		end = actualSize
+	if end > n {
+		end = n
 	}
 	classbook := books[x.classbook]
 	classWordsPerCodeword := classbook.dimensions
 	nToRead := end - begin
 	partitionsToRead := nToRead / x.partitionSize
 
-	result := make([][]float32, ch)
-	for i := range result {
-		result[i] = make([]float32, n)
-	}
 	if nToRead == 0 {
-		return result
+		return
 	}
 	cs := (partitionsToRead + classWordsPerCodeword)
 	classifications := make([]uint32, ch*cs)
@@ -122,7 +119,7 @@ func (x *residue) decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []c
 					}
 				}
 			}
-			for i := uint32(0); i < classWordsPerCodeword && partitionCount < partitionsToRead; i++ {
+			for classword := uint32(0); classword < classWordsPerCodeword && partitionCount < partitionsToRead; classword++ {
 				for j := uint32(0); j < ch; j++ {
 					if !doNotDecode[j] {
 						vqclass := classifications[j*cs+partitionCount]
@@ -130,20 +127,31 @@ func (x *residue) decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []c
 						if vqbook != 0xFF {
 							book := books[vqbook]
 							offset := begin + partitionCount*x.partitionSize
-							if x.residueType == 0 {
+							switch x.residueType {
+							case 0:
 								step := x.partitionSize / book.dimensions
 								for i := uint32(0); i < step; i++ {
 									tmp := book.DecodeVector(r)
 									for k := range tmp {
-										result[j][offset+i+uint32(k)*step] += tmp[k]
+										out[j][offset+i+uint32(k)*step] += tmp[k]
 									}
 								}
-							} else {
+							case 1:
 								var i uint32
-								for i < uint32(x.partitionSize) {
+								for i < x.partitionSize {
 									tmp := book.DecodeVector(r)
 									for k := range tmp {
-										result[j][offset+i] += tmp[k]
+										out[j][offset+i] += tmp[k]
+										i++
+									}
+								}
+							case 2:
+								var i uint32
+								ch := uint32(len(out))
+								for i < x.partitionSize {
+									tmp := book.DecodeVector(r)
+									for k := range tmp {
+										out[(offset+i)%ch][(offset+i)/ch] += tmp[k]
 										i++
 									}
 								}
@@ -155,5 +163,4 @@ func (x *residue) decode(r *ogg.BitReader, doNotDecode []bool, n uint, books []c
 			}
 		}
 	}
-	return result
 }

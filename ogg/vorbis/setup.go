@@ -79,8 +79,9 @@ type setup struct {
 	mappings  []mapping
 	modes     []mode
 
-	windows [2][]float32
-	lookup  [2]imdctLookup
+	windows       [2][]float32
+	lookup        [2]imdctLookup
+	residueBuffer [][]float32
 }
 
 type floor interface {
@@ -226,4 +227,8 @@ func (s *setup) init(i *identification) {
 	s.windows[0] = makeWindow(s.blocksize[0])
 	s.windows[1] = makeWindow(s.blocksize[1])
 	generateIMDCTLookup(s.blocksize, &s.lookup)
+	s.residueBuffer = make([][]float32, s.channels)
+	for i := range s.residueBuffer {
+		s.residueBuffer[i] = make([]float32, s.blocksize[1]/2)
+	}
 }
