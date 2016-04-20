@@ -46,32 +46,6 @@ func (x *residue) ReadFrom(r *ogg.BitReader) error {
 	return nil
 }
 
-/*
-func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint32, books []codebook, out [][]float32) {
-	if x.residueType < 3 {
-		x.decode(r, doNotDecode, n, books, out)
-	} else {
-		ch := uint32(len(doNotDecode))
-		decode := false
-		for _, not := range doNotDecode {
-			if !not {
-				decode = true
-				break
-			}
-		}
-		if !decode {
-			return
-		}
-		tmp := [][]float32{make([]float32, n*ch)}
-		x.decode(r, []bool{false}, n*ch, books, tmp)
-		for i := uint32(0); i < n; i++ {
-			for j := uint32(0); j < ch; j++ {
-				out[j][i] = tmp[0][j+i*ch]
-			}
-		}
-	}
-}
-*/
 func (x *residue) Decode(r *ogg.BitReader, doNotDecode []bool, n uint32, books []codebook, out [][]float32) {
 	ch := uint32(len(doNotDecode))
 	if x.residueType == 2 {

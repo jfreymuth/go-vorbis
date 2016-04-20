@@ -47,7 +47,6 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 	// inverse MDCT
 	out := make([][]float32, s.channels)
 	for ch := range out {
-		//out[ch] = s.outputBuffer[ch][:blocksize]
 		out[ch] = make([]float32, blocksize)
 		imdct(s.lookup[blocktype], residueVectors[ch], out[ch])
 	}
