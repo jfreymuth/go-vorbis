@@ -72,7 +72,7 @@ func (c *comments) ReadFrom(b []byte) {
 
 type setup struct {
 	channels  int
-	blocksize [2]uint
+	blocksize [2]int
 	codebooks []codebook
 	floors    []floor
 	residues  []residue
@@ -222,8 +222,8 @@ func (s *setup) ReadFrom(r *ogg.BitReader) error {
 
 func (s *setup) init(i *identification) {
 	s.channels = int(i.audioChannels)
-	s.blocksize[0] = uint(i.blocksize0)
-	s.blocksize[1] = uint(i.blocksize1)
+	s.blocksize[0] = int(i.blocksize0)
+	s.blocksize[1] = int(i.blocksize1)
 	s.windows[0] = makeWindow(s.blocksize[0])
 	s.windows[1] = makeWindow(s.blocksize[1])
 	generateIMDCTLookup(s.blocksize, &s.lookup)

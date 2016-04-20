@@ -12,7 +12,6 @@ type floor1 struct {
 	multiplier         uint8
 	rangebits          uint8
 	xList              []uint32
-	values             uint8
 	sort               []uint32
 
 	step2  []bool

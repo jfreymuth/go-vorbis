@@ -24,9 +24,16 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 	blocksize := s.blocksize[blocktype]
 	spectrumSize := uint32(blocksize / 2)
 	windowPrev, windowNext := false, false
+	window := windowType{blocksize, blocksize, blocksize}
 	if longWindow {
 		windowPrev = r.ReadBool()
 		windowNext = r.ReadBool()
+		if !windowPrev {
+			window.prev = s.blocksize[0]
+		}
+		if !windowNext {
+			window.next = s.blocksize[0]
+		}
 	}
 
 	mapping := &s.mappings[mode.mapping]
@@ -52,52 +59,22 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 	}
 
 	// apply window and overlap
+	s.applyWindow(&window, out)
 	center := blocksize / 2
-	shortCenter := s.blocksize[0] / 2
 	offset := s.blocksize[1]/4 - s.blocksize[0]/4
 	final := make([][]float32, s.channels)
 	next := make([][]float32, s.channels)
 	if longWindow {
 		for ch := range out {
-			//first half
-			if windowPrev {
-				for i := uint(0); i < center; i++ {
-					out[ch][i] *= s.windows[1][i]
-				}
-			} else {
-				for i := uint(0); i < offset; i++ {
-					out[ch][i] = 0
-				}
-				for i := uint(0); i < shortCenter; i++ {
-					out[ch][offset+i] *= s.windows[0][i]
-				}
-			}
-			//second half
-			if windowNext {
-				for i := center; i < blocksize; i++ {
-					out[ch][i] *= s.windows[1][i]
-				}
-			} else {
-				for i := uint(0); i < shortCenter; i++ {
-					out[ch][center+offset+i] *= s.windows[0][shortCenter+i]
-				}
-				for i := center + offset + shortCenter; i < blocksize; i++ {
-					out[ch][i] = 0
-				}
-			}
-			//
-			start := uint(0)
-			center := center
+			start := 0
 			end := blocksize
 			if !windowPrev {
 				start += offset
 			}
 			if !windowNext {
-				center += offset
 				end -= offset
 			}
 			final[ch], next[ch] = out[ch][start:center], out[ch][center:end]
-			//overlap
 			if prev != nil {
 				for i := range prev[ch] {
 					final[ch][i] += prev[ch][i]
@@ -106,14 +83,17 @@ func (s *setup) decodePacket(r *ogg.BitReader, prev [][]float32) ([][]float32, [
 		}
 	} else /*short window*/ {
 		for ch := range out {
-			for i := range out[ch] {
-				out[ch][i] *= s.windows[0][i]
-			}
-			next[ch], final[ch] = out[ch][center:], out[ch][:center]
-			//overlap
-			if prev != nil {
-				for j := range final[ch] {
-					final[ch][j] += prev[ch][j]
+			if prev != nil && len(prev[ch]) > center {
+				final[ch], next[ch] = prev[ch], out[ch][center:]
+				for i := offset; i < len(final[ch]); i++ {
+					final[ch][i] += out[ch][i-offset]
+				}
+			} else {
+				final[ch], next[ch] = out[ch][:center], out[ch][center:]
+				if prev != nil {
+					for i := range final[ch] {
+						final[ch][i] += prev[ch][i]
+					}
 				}
 			}
 		}
@@ -185,7 +165,7 @@ func (s *setup) applyFloor(floors []floorData, residueVectors [][]float32) {
 	}
 }
 
-func makeWindow(size uint) []float32 {
+func makeWindow(size int) []float32 {
 	window := make([]float32, size)
 	for i := range window {
 		window[i] = windowFunc((float32(i) + .5) / float32(size/2) * math.Pi / 2)

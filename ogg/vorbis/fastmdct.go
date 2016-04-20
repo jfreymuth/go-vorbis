@@ -6,10 +6,10 @@ type imdctLookup struct {
 	A, B, C []float32
 }
 
-func generateIMDCTLookup(blocksize [2]uint, lookup *[2]imdctLookup) {
+func generateIMDCTLookup(blocksize [2]int, lookup *[2]imdctLookup) {
 	for i := range lookup {
 		l := &lookup[i]
-		n := int(blocksize[i])
+		n := blocksize[i]
 		lookup[i].A = make([]float32, n/2)
 		lookup[i].B = make([]float32, n/2)
 		lookup[i].C = make([]float32, n/4)
